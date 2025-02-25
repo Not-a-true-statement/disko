@@ -122,6 +122,18 @@ in
                 default = null;
                 description = "Location to mount the subvolume to.";
               };
+
+              deleteExsisting = lib.mkOption {
+                type = lib.types.boolean;
+                default = false;
+                description = "Wheter exsisting subvolume should be deleted";
+              };
+              extraArgsDeleteExsisting = lib.mkOption {
+                type = lib.types.listOf lib.types.str;
+                default = [ ];
+                description = "Extra subvolume deletion arguments";
+              };
+
               swap = swapType;
             };
           }
@@ -150,10 +162,12 @@ in
     _create = diskoLib.mkCreateOption {
       inherit config options;
       default = ''
+
         # create the filesystem only if the device seems empty
         if ! (blkid "${config.device}" -o export | grep -q '^TYPE='); then
           mkfs.btrfs "${config.device}" ${toString config.extraArgs}
         fi
+
         ${lib.optionalString (config.swap != { } || config.subvolumes != { }) ''
           if (blkid "${config.device}" -o export | grep -q '^TYPE=btrfs$'); then
             ${lib.optionalString (config.swap != { }) ''
@@ -164,12 +178,20 @@ in
                 ${swapCreate "$MNTPOINT" config.swap}
               )
             ''}
+
             ${lib.concatMapStrings (subvol: ''
               (
                 MNTPOINT=$(mktemp -d)
                 mount "${config.device}" "$MNTPOINT" -o subvol=/
                 trap 'umount $MNTPOINT; rm -rf $MNTPOINT' EXIT
                 SUBVOL_ABS_PATH="$MNTPOINT/${subvol.name}"
+
+                ${lib.optionalString (subvol.deleteExsisting == true) ''
+                if btrfs subvolume show "$SUBVOL_ABS_PATH" > /dev/null 2>&1; then
+                  btrfs subvolume delete "$SUBVOL_ABS_PATH" ${toString subvol.extraArgsDeleteExsisting}
+                fi
+                ''}
+
                 mkdir -p "$(dirname "$SUBVOL_ABS_PATH")"
                 if ! btrfs subvolume show "$SUBVOL_ABS_PATH" > /dev/null 2>&1; then
                   btrfs subvolume create "$SUBVOL_ABS_PATH" ${toString subvol.extraArgs}
