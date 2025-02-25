@@ -124,7 +124,7 @@ in
               };
 
               deleteExsisting = lib.mkOption {
-                type = lib.types.boolean;
+                type = lib.types.bool;
                 default = false;
                 description = "Wheter exsisting subvolume should be deleted";
               };
